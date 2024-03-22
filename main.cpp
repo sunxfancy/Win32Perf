@@ -701,7 +701,7 @@ struct DecoderSettings
     }
 };
 
-#define LOGFILE_PATH "F:\\Experimental\\Win32Perf\\build\\FILE.etl"
+#define LOGFILE_PATH "C:\\Users\\xiaofans\\Workspace\\Win32Perf\\build\\FILE.etl"
 
 // 这函数每次事件都会被调用
 void PeventRecordCallback(PEVENT_RECORD EventRecord) {
@@ -717,20 +717,20 @@ void PeventRecordCallback(PEVENT_RECORD EventRecord) {
   wprintf(L"EventRecord->ExtendedDataCount: %lu\n",
           EventRecord->ExtendedDataCount);
 
-  try
-    {
-        // We expect that the EVENT_TRACE_LOGFILE.Context pointer was set with a
-        // pointer to a DecoderContext. ProcessTrace will put the Context value
-        // into EVENT_RECORD.UserContext.
-        DecoderContext* pContext = static_cast<DecoderContext*>(EventRecord->UserContext);
+//   try
+//     {
+//         // We expect that the EVENT_TRACE_LOGFILE.Context pointer was set with a
+//         // pointer to a DecoderContext. ProcessTrace will put the Context value
+//         // into EVENT_RECORD.UserContext.
+//         DecoderContext* pContext = static_cast<DecoderContext*>(EventRecord->UserContext);
 
-        // The actual decoding work is done in PrintEventRecord.
-        pContext->PrintEventRecord(EventRecord);
-    }
-    catch (std::exception const& ex)
-    {
-        wprintf(L"\nERROR: %hs\n", ex.what());
-    }
+//         // The actual decoding work is done in PrintEventRecord.
+//         pContext->PrintEventRecord(EventRecord);
+//     }
+//     catch (std::exception const& ex)
+//     {
+//         wprintf(L"\nERROR: %hs\n", ex.what());
+//     }
 
   // 下面我们就要尝试读取这部分的硬件寄存器。
   for (int i = 0; i < EventRecord->ExtendedDataCount; ++i) {
@@ -738,16 +738,14 @@ void PeventRecordCallback(PEVENT_RECORD EventRecord) {
     if (item->ExtType == EVENT_HEADER_EXT_TYPE_PMC_COUNTERS) {
       wprintf(L"Reserve1: %lu\n", item->Reserved1);
       wprintf(L"Reserve2: %lu\n", item->Reserved2);
+    wprintf(L"item->DataPtr = %p\n", item->DataPtr);
+    wprintf(L"item->DataSize = %lu\n", item->DataSize);
+    _EVENT_EXTENDED_ITEM_PMC_COUNTERS *pmc =
+        (_EVENT_EXTENDED_ITEM_PMC_COUNTERS *)item->DataPtr;
+        wprintf(L"TotalIssues: %zu TotalCycles: %zu CacheMisses: %zu BranchMispredictions: %zu \n", 
+                    pmc->Counter[0], pmc->Counter[1], pmc->Counter[2], pmc->Counter[3]);
 
-      if (item->Linkage != 0) {
-        wprintf(L"Linkage is not 0\n");
-        wprintf(L"item->DataPtr = %p\n", item->DataPtr);
-        wprintf(L"item->DataSize = %lu\n", item->DataSize);
-        _EVENT_EXTENDED_ITEM_PMC_COUNTERS *pmc =
-            (_EVENT_EXTENDED_ITEM_PMC_COUNTERS *)item->DataPtr;
         
-        
-      }
     } else {
         wprintf(L"ExtType: %lu\n", item->ExtType);
         wprintf(L"Reserve1: %lu\n", item->Reserved1);
@@ -759,7 +757,11 @@ void PeventRecordCallback(PEVENT_RECORD EventRecord) {
   }
 }
 
+
+DEFINE_GUID ( /* 3d6fa8d1-fe05-11d0-9dda-00c04fd7ba7c */    ThreadGuid,    0x3d6fa8d1,    0xfe05,    0x11d0,    0x9d, 0xda, 0x00, 0xc0, 0x4f, 0xd7, 0xba, 0x7c  );
+
 int main(void) {
+
   ULONG status = ERROR_SUCCESS;
   // 这是一个会话的句柄，全局唯一。
   TRACEHANDLE SessionHandle = 0;
@@ -808,11 +810,11 @@ int main(void) {
   pSessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
   pSessionProperties->Wnode.ClientContext = 1; // QPC clock resolution
   pSessionProperties->Wnode.Guid = SystemTraceControlGuid;
-  pSessionProperties->EnableFlags = EVENT_TRACE_FLAG_PROCESS;
-  pSessionProperties->LogFileMode = EVENT_TRACE_FILE_MODE_SEQUENTIAL;
+  pSessionProperties->EnableFlags = EVENT_TRACE_FLAG_CSWITCH;
+  pSessionProperties->LogFileMode = EVENT_TRACE_FILE_MODE_SEQUENTIAL | EVENT_TRACE_SYSTEM_LOGGER_MODE ;
 //   pSessionProperties->BufferSize = 32;
   pSessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
-  pSessionProperties->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES) + sizeof(KERNEL_LOGGER_NAME); 
+  pSessionProperties->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES) + sizeof(KERNEL_LOGGER_NAME);
   StringCbCopy((char*)pSessionProperties + pSessionProperties->LogFileNameOffset, sizeof(LOGFILE_PATH), LOGFILE_PATH);
 
 
@@ -833,7 +835,7 @@ int main(void) {
       status = StartTrace((PTRACEHANDLE)&SessionHandle, KERNEL_LOGGER_NAME,
                           pSessionProperties);
     } else {
-      wprintf(L"EnableTrace() failed with %lu\n", status);
+      wprintf(L"StartTrace() failed with %lu\n", status);
       if (SessionHandle) {
         status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME,
                               pSessionProperties, EVENT_TRACE_CONTROL_STOP);
@@ -865,18 +867,19 @@ int main(void) {
       status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME,
                             pSessionProperties, EVENT_TRACE_CONTROL_STOP);
 
-      if (ERROR_SUCCESS != status) {
+      if (ERROR_SUCCESS != status)
         wprintf(L"ControlTrace(stop) failed with %lu\n", status);
-      }
     }
 
     if (pSessionProperties)
       free(pSessionProperties);
   }
 
-  unsigned long perf_counter[4] = {0x02, 0x13, 0x0A, 0x0B};
-  status = TraceSetInformation(SessionHandle, TracePmcCounterListInfo, perf_counter,
-                      sizeof(perf_counter));
+  
+
+  CLASSIC_EVENT_ID perf_event[1] = {{ThreadGuid, 36}};
+  status = TraceSetInformation(SessionHandle, TracePmcEventListInfo, perf_event,
+                      sizeof(perf_event));
   wprintf(L"start tracing\n");
   if (ERROR_SUCCESS != status) {
     wprintf(L"TraceSetInformation() failed with %lu\n", status);
