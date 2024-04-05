@@ -701,7 +701,7 @@ struct DecoderSettings
     }
 };
 
-#define LOGFILE_PATH "C:\\Users\\xiaofans\\Workspace\\Win32Perf\\build\\FILE.etl"
+#define LOGFILE_PATH "F:\\Experimental\\Win32Perf\\build\\FILE.etl"
 DWORD PID;
 
 // 这函数每次事件都会被调用
@@ -718,20 +718,20 @@ void PeventRecordCallback(PEVENT_RECORD EventRecord) {
   wprintf(L"EventRecord->ExtendedDataCount: %lu\n",
           EventRecord->ExtendedDataCount);
 
-//   try
-//     {
-//         // We expect that the EVENT_TRACE_LOGFILE.Context pointer was set with a
-//         // pointer to a DecoderContext. ProcessTrace will put the Context value
-//         // into EVENT_RECORD.UserContext.
-//         DecoderContext* pContext = static_cast<DecoderContext*>(EventRecord->UserContext);
+  try
+    {
+        // We expect that the EVENT_TRACE_LOGFILE.Context pointer was set with a
+        // pointer to a DecoderContext. ProcessTrace will put the Context value
+        // into EVENT_RECORD.UserContext.
+        DecoderContext* pContext = static_cast<DecoderContext*>(EventRecord->UserContext);
 
-//         // The actual decoding work is done in PrintEventRecord.
-//         pContext->PrintEventRecord(EventRecord);
-//     }
-//     catch (std::exception const& ex)
-//     {
-//         wprintf(L"\nERROR: %hs\n", ex.what());
-//     }
+        // The actual decoding work is done in PrintEventRecord.
+        pContext->PrintEventRecord(EventRecord);
+    }
+    catch (std::exception const& ex)
+    {
+        wprintf(L"\nERROR: %hs\n", ex.what());
+    }
 
   // 下面我们就要尝试读取这部分的硬件寄存器。
   for (int i = 0; i < EventRecord->ExtendedDataCount; ++i) {
@@ -761,6 +761,12 @@ void PeventRecordCallback(PEVENT_RECORD EventRecord) {
 
 DEFINE_GUID ( /* 3d6fa8d1-fe05-11d0-9dda-00c04fd7ba7c */    ThreadGuid,    0x3d6fa8d1,    0xfe05,    0x11d0,    0x9d, 0xda, 0x00, 0xc0, 0x4f, 0xd7, 0xba, 0x7c  );
 
+
+#define PRIVATE_LOGGER_NAME "My Private Trace Session"
+// {5B506A2E-6E51-48E8-88AF-4B6810928C93}
+DEFINE_GUID(PrivateTraceSessionGuid, 0x5b506a2e, 0x6e51, 0x48e8, 0x88, 0xaf, 0x4b, 0x68, 0x10, 0x92, 0x8c, 0x93);
+
+
 int main(void) {
   PID = GetCurrentProcessId();
   ULONG status = ERROR_SUCCESS;
@@ -775,13 +781,13 @@ int main(void) {
   // be large enough to include the log file name and session name,
   // which get appended to the end of the session properties structure.
 
-  BufferSize = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(LOGFILE_PATH) +  sizeof(KERNEL_LOGGER_NAME);
+  BufferSize = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(LOGFILE_PATH) +  sizeof(PRIVATE_LOGGER_NAME);
   pSessionProperties = (EVENT_TRACE_PROPERTIES_V2 *)malloc(BufferSize);
   if (NULL == pSessionProperties) {
     wprintf(L"Unable to allocate %d bytes for properties structure.\n",
             BufferSize);
     if (SessionHandle) {
-      status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME,
+      status = ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME,
                             (PEVENT_TRACE_PROPERTIES)pSessionProperties, EVENT_TRACE_CONTROL_STOP);
 
       if (ERROR_SUCCESS != status) {
@@ -811,13 +817,13 @@ int main(void) {
   pSessionProperties->Wnode.BufferSize = BufferSize;
   pSessionProperties->Wnode.Flags = WNODE_FLAG_TRACED_GUID | WNODE_FLAG_VERSIONED_PROPERTIES;
   pSessionProperties->Wnode.ClientContext = 1; // QPC clock resolution
-  pSessionProperties->Wnode.Guid = SystemTraceControlGuid;
+  pSessionProperties->Wnode.Guid = PrivateTraceSessionGuid;
   pSessionProperties->EnableFlags = EVENT_TRACE_FLAG_THREAD | EVENT_TRACE_FLAG_CSWITCH;
 
-  pSessionProperties->LogFileMode = EVENT_TRACE_FILE_MODE_SEQUENTIAL | EVENT_TRACE_SYSTEM_LOGGER_MODE ;
+  pSessionProperties->LogFileMode = EVENT_TRACE_FILE_MODE_SEQUENTIAL | EVENT_TRACE_SYSTEM_LOGGER_MODE;
 //   pSessionProperties->BufferSize = 32;
   pSessionProperties->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES_V2);
-  pSessionProperties->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(KERNEL_LOGGER_NAME);
+  pSessionProperties->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES_V2) + sizeof(PRIVATE_LOGGER_NAME);
   StringCbCopy((char*)pSessionProperties + pSessionProperties->LogFileNameOffset, sizeof(LOGFILE_PATH), LOGFILE_PATH);
 
   // filiter 
@@ -836,21 +842,21 @@ int main(void) {
   // 这个函数用来创建一个trace session,
   // 并且它会自动的将传入的名称添加到我们结构体对应设置好的偏移量位置
   // 并且会部分刷新我们的这个property结构体
-  status = StartTrace((PTRACEHANDLE)&SessionHandle, KERNEL_LOGGER_NAME,
+  status = StartTrace((PTRACEHANDLE)&SessionHandle, PRIVATE_LOGGER_NAME,
                       (PEVENT_TRACE_PROPERTIES)pSessionProperties);
 
   // 返回值 是一个错误码 如果是ERROR_SUCCESS的话就是成功了。
   if (ERROR_SUCCESS != status) {
     if (ERROR_ALREADY_EXISTS == status) {
       wprintf(L"The NT Kernel Logger session is already in use.\n");
-      ControlTrace(SessionHandle, KERNEL_LOGGER_NAME, (PEVENT_TRACE_PROPERTIES)pSessionProperties,
+      ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME, (PEVENT_TRACE_PROPERTIES)pSessionProperties,
                    EVENT_TRACE_CONTROL_STOP);
-      status = StartTrace((PTRACEHANDLE)&SessionHandle, KERNEL_LOGGER_NAME,
+      status = StartTrace((PTRACEHANDLE)&SessionHandle, PRIVATE_LOGGER_NAME,
                           (PEVENT_TRACE_PROPERTIES)pSessionProperties);
     } else {
       wprintf(L"StartTrace() failed with %lu\n", status);
       if (SessionHandle) {
-        status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME,
+        status = ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME,
                               (PEVENT_TRACE_PROPERTIES)pSessionProperties, EVENT_TRACE_CONTROL_STOP);
 
         if (ERROR_SUCCESS != status) {
@@ -877,7 +883,7 @@ int main(void) {
   if (ERROR_SUCCESS != status) {
     wprintf(L"TraceSetInformation() failed with %lu\n", status);
     if (SessionHandle) {
-      status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME,
+      status = ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME,
                             (PEVENT_TRACE_PROPERTIES)pSessionProperties, EVENT_TRACE_CONTROL_STOP);
 
       if (ERROR_SUCCESS != status)
@@ -897,7 +903,7 @@ int main(void) {
   if (ERROR_SUCCESS != status) {
     wprintf(L"TraceSetInformation() failed with %lu\n", status);
     if (SessionHandle) {
-      status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME,
+      status = ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME,
                             (PEVENT_TRACE_PROPERTIES)pSessionProperties, EVENT_TRACE_CONTROL_STOP);
 
       if (ERROR_SUCCESS != status) {
@@ -917,7 +923,7 @@ int main(void) {
   // if (ERROR_SUCCESS != status) {
   //   wprintf(L"TraceSetInformation() failed with %lu\n", status);
   //   if (SessionHandle) {
-  //     status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME,
+  //     status = ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME,
   //                           pSessionProperties, EVENT_TRACE_CONTROL_STOP);
 
   //     if (ERROR_SUCCESS != status) {
@@ -934,7 +940,7 @@ int main(void) {
     Sleep(1);
   }
 
-  status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME, (PEVENT_TRACE_PROPERTIES)pSessionProperties,
+  status = ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME, (PEVENT_TRACE_PROPERTIES)pSessionProperties,
                         EVENT_TRACE_CONTROL_STOP);
   SessionHandle = 0;
   wprintf(L"stop tracing\n");
@@ -943,7 +949,7 @@ int main(void) {
   // trace
   EVENT_TRACE_LOGFILE logfile;
   ZeroMemory(&logfile, sizeof(EVENT_TRACE_LOGFILE));
-  logfile.LoggerName = KERNEL_LOGGER_NAME;
+  logfile.LoggerName = PRIVATE_LOGGER_NAME;
   logfile.ProcessTraceMode = PROCESS_TRACE_MODE_EVENT_RECORD;
   logfile.LogFileName = LOGFILE_PATH;
 
@@ -975,7 +981,7 @@ int main(void) {
   _getch();
 
   if (SessionHandle) {
-    status = ControlTrace(SessionHandle, KERNEL_LOGGER_NAME, (PEVENT_TRACE_PROPERTIES)pSessionProperties,
+    status = ControlTrace(SessionHandle, PRIVATE_LOGGER_NAME, (PEVENT_TRACE_PROPERTIES)pSessionProperties,
                           EVENT_TRACE_CONTROL_STOP);
 
     if (ERROR_SUCCESS != status) {
